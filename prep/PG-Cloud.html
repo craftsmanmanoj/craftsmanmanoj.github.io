@@ -1485,22 +1485,354 @@ strong {
 <hr>
 		
 <h2 id="hadoop-ecosystem">Hadoop Ecosystem</h2>
+<p>The Hadoop ecosystem is a collection of open-source projects and tools built around the core Hadoop platform to enable scalable, fault-tolerant, distributed storage and processing of massive datasets. While the foundational framework consists of HDFS, YARN, and MapReduce, the ecosystem extends Hadoop into a comprehensive data platform through a rich set of tools for data ingestion, SQL analytics, workflow scheduling, coordination, and more. This section provides a detailed overview of Hadoop’s architecture, its core and supporting components, and how they work together to address big data challenges.</p>
+<hr>
+<h3 id="1-hadoop-architecture-overview">1. Hadoop Architecture Overview</h3>
+<p>Hadoop follows a layered, master‑slave architecture designed to run on clusters of commodity hardware. The three primary layers are:</p>
 <ul>
-<li>Hadoop architecture overview</li>
-<li>Hadoop components</li>
-<li>Hadoop cluster architecture</li>
-<li>Hadoop deployment modes</li>
-<li>Hadoop ecosystem tools</li>
-<li>Apache Hive</li>
-<li>Apache Pig</li>
-<li>Apache Sqoop</li>
-<li>Apache Flume</li>
-<li>Apache Oozie</li>
-<li>Apache ZooKeeper</li>
-<li>Hadoop use cases</li>
-<li>Hadoop administration basics</li>
+<li><strong>Storage layer – HDFS</strong> (Hadoop Distributed File System): a distributed file system that partitions large files into blocks and replicates them across the cluster. It provides high throughput, fault tolerance, and data locality for processing.</li>
+<li><strong>Resource management layer – YARN</strong> (Yet Another Resource Negotiator): decouples resource management from processing engines, allowing multiple applications (MapReduce, Spark, Tez) to share the cluster efficiently. It allocates CPU, memory, and other resources to running applications.</li>
+<li><strong>Processing layer – MapReduce (and others)</strong>: the original batch processing engine, based on map and reduce functions. Modern Hadoop deployments also support other frameworks like Apache Tez and Apache Spark, but MapReduce remains the default batch engine.</li>
+<li><strong>Common utilities – Hadoop Common</strong>: a set of libraries and utilities shared by all Hadoop modules, including serialization, authentication, and configuration.</li>
 </ul>
-<hr><h2 id="hdfs-architecture">HDFS Architecture</h2>
+<p>A typical Hadoop stack works as follows: data is loaded into HDFS, YARN schedules and manages containers for application masters and tasks, and processing engines like MapReduce or Spark read data directly from HDFS (exploiting data locality) and write results back.</p>
+<hr>
+<h3 id="2-core-hadoop-components">2. Core Hadoop Components</h3>
+<h4 id="2-1-hdfs-storage-">2.1 HDFS (Storage)</h4>
+<p>As detailed in the Distributed File Systems chapter, HDFS uses a <strong>NameNode</strong> (master) to manage metadata and <strong>DataNodes</strong> (slaves) to store blocks. It is optimized for write‑once‑read‑many access, large block sizes (128 MB default), and rack‑aware replication for fault tolerance.</p>
+<h4 id="2-2-yarn-resource-management-">2.2 YARN (Resource Management)</h4>
+<p>YARN separates the resource management and job scheduling/monitoring functions, making Hadoop a multi‑application data operating system.</p>
+<ul>
+<li><strong>ResourceManager (RM)</strong>: a per‑cluster master daemon that arbitrates resources among competing applications. It has a pluggable <strong>Scheduler</strong> that allocates resources based on policies (capacity, fair scheduling) and an <strong>ApplicationManager</strong> that manages application lifecycles.</li>
+<li><strong>NodeManager (NM)</strong>: per‑node slave agent that monitors resource usage (CPU, memory, disk, network) and reports to the RM. It launches and manages <strong>containers</strong>.</li>
+<li><strong>ApplicationMaster (AM)</strong>: a per‑application component that negotiates resources from the RM and works with the NMs to execute and monitor tasks. For MapReduce jobs, the MRAppMaster is the AM.</li>
+</ul>
+<p>YARN enables multi‑tenancy and allows Spark, Tez, Flink, or custom applications to run alongside MapReduce, all sharing the same cluster without duplication of data.</p>
+<h4 id="2-3-mapreduce-processing-engine-">2.3 MapReduce (Processing Engine)</h4>
+<p>MapReduce is a programming model and runtime for processing large datasets in parallel across a cluster.</p>
+<ul>
+<li><strong>Map phase</strong>: input data is split into logical <strong>InputSplits</strong> (often aligned with HDFS blocks). A map task processes each split and emits intermediate key‑value pairs.</li>
+<li><strong>Shuffle and Sort</strong>: the framework partitions, sorts, and transfers intermediate data to reducers.</li>
+<li><strong>Reduce phase</strong>: reducers aggregate the intermediate data by key to produce the final output.</li>
+</ul>
+<p>MapReduce jobs are batch‑oriented; while powerful, they can have high latency. Higher‑level abstractions (Hive, Pig) and faster engines (Tez, Spark) are often preferred today, but the MapReduce model remains foundational.</p>
+<h4 id="2-4-hadoop-common">2.4 Hadoop Common</h4>
+<p>Provides shared libraries, including configuration handling (<code>core-site.xml</code>), RPC mechanisms, authentication (Kerberos integration), and abstract file system interfaces that allow HDFS, S3, or other stores to be accessed uniformly.</p>
+<hr>
+<h3 id="3-hadoop-cluster-architecture">3. Hadoop Cluster Architecture</h3>
+<p>A Hadoop cluster is a collection of nodes organized in racks, with dedicated master nodes and many worker nodes.</p>
+<p><strong>Master Nodes:</strong></p>
+<ul>
+<li><strong>NameNode</strong> (HDFS master): holds metadata, coordinates block operations. For high availability, a pair of NameNodes in an active‑standby configuration with shared edits via JournalNodes.</li>
+<li><strong>ResourceManager</strong> (YARN master): centrally schedules resources. Can also be configured for HA with active‑standby and ZooKeeper‑based failover.</li>
+<li><strong>Secondary NameNode / Standby NameNode</strong>: not a hot standby in older versions; the Secondary NameNode periodically merges the edit log with the fsimage to prevent the log from growing too large. In HA mode, the Standby performs this checkpointing.</li>
+</ul>
+<p><strong>Worker Nodes (Slaves):</strong></p>
+<ul>
+<li>Run both a <strong>DataNode</strong> (stores HDFS blocks) and a <strong>NodeManager</strong> (manages YARN containers). Typically, each worker node has multiple disks and runs both daemons so that data and compute are co‑located.</li>
+</ul>
+<p><strong>Rack Awareness:</strong></p>
+<ul>
+<li>Hadoop is aware of the physical rack topology to optimize data placement (replicas across racks) and network bandwidth. The cluster admin defines a topology script that maps node addresses to racks.</li>
+</ul>
+<p><strong>Fault Tolerance at the Cluster Level:</strong></p>
+<ul>
+<li><strong>DataNode failure</strong>: detected via heartbeat timeouts; lost blocks are re‑replicated.</li>
+<li><strong>NameNode failure</strong>: HA configuration ensures a standby takes over automatically.</li>
+<li><strong>ResourceManager failure</strong>: RM HA recovers state from persistent store and resumes without losing running application contexts.</li>
+<li><strong>NodeManager failure</strong>: RM marks it dead and re‑schedules its containers elsewhere.</li>
+</ul>
+<p><strong>Client Access:</strong></p>
+<ul>
+<li>Users submit jobs or access files via the Hadoop client library, which communicates with the masters for metadata and directly with worker nodes for data transfer.</li>
+</ul>
+<hr>
+<h3 id="4-hadoop-deployment-modes">4. Hadoop Deployment Modes</h3>
+<p>Hadoop can be deployed in several modes, each suited to different stages of development and production.</p>
+<p><strong>Local (Standalone) Mode:</strong></p>
+<ul>
+<li>All Hadoop daemons run in a single JVM process.</li>
+<li>HDFS is not used; it uses the local file system.</li>
+<li>Ideal for debugging, development, and unit testing, as no configuration or daemon startup is needed.</li>
+<li>No parallelism; no fault tolerance.</li>
+</ul>
+<p><strong>Pseudo-Distributed Mode:</strong></p>
+<ul>
+<li>All Hadoop daemons (NameNode, DataNode, ResourceManager, NodeManager) run on a single machine but in separate JVMs.</li>
+<li>HDFS is simulated with a single node, replication factor set to 1.</li>
+<li>Allows developers to test Hadoop functionality and configuration in an environment close to a real cluster without multiple machines.</li>
+</ul>
+<p><strong>Fully Distributed Mode:</strong></p>
+<ul>
+<li>Production mode where services run on different nodes in a cluster.</li>
+<li>Masters and slaves are separated; replication factor typically 3.</li>
+<li>The cluster scales horizontally by adding worker nodes.</li>
+<li>Requires careful configuration of network, security, and resource management.</li>
+</ul>
+<p><strong>Cloud Deployments:</strong></p>
+<ul>
+<li>Hadoop can be deployed on cloud IaaS or consumed as a managed service (e.g., Amazon EMR, Google Dataproc, Azure HDInsight).</li>
+<li>Cloud deployments often replace HDFS with cloud object stores (S3, ADLS) for elastic storage, while still running YARN and processing engines on ephemeral compute clusters.</li>
+<li>Provides elasticity: clusters can be created and terminated on demand, separating storage from compute.</li>
+</ul>
+<hr>
+<h3 id="5-hadoop-ecosystem-tools-overview-">5. Hadoop Ecosystem Tools (Overview)</h3>
+<p>Beyond core components, a rich set of projects extends Hadoop’s capabilities:</p>
+<ul>
+<li><strong>Data Ingestion</strong>: <strong>Flume</strong> (log streaming), <strong>Sqoop</strong> (RDBMS transfer), <strong>Kafka</strong> (event streaming, often used with Hadoop).</li>
+<li><strong>SQL and Data Warehousing</strong>: <strong>Hive</strong>, <strong>Impala</strong>, <strong>Presto/Trino</strong>.</li>
+<li><strong>Scripting and Data Flow</strong>: <strong>Pig</strong>.</li>
+<li><strong>NoSQL Databases</strong>: <strong>HBase</strong> (columnar store on HDFS), <strong>Cassandra</strong>.</li>
+<li><strong>Machine Learning</strong>: <strong>Mahout</strong>, <strong>Spark MLlib</strong>.</li>
+<li><strong>Workflow and Coordination</strong>: <strong>Oozie</strong>, <strong>ZooKeeper</strong>, <strong>Airflow</strong> (third‑party).</li>
+<li><strong>Cluster Management</strong>: <strong>Ambari</strong> (provisioning, monitoring), <strong>ZooKeeper</strong> (coordination).</li>
+<li><strong>Security</strong>: <strong>Ranger</strong>, <strong>Knox</strong>.</li>
+</ul>
+<p>The following sections focus on the specific ecosystem tools listed in the curriculum.</p>
+<hr>
+<h3 id="6-apache-hive">6. Apache Hive</h3>
+<p><strong>Purpose:</strong> Hive is a data warehouse infrastructure built on top of Hadoop that provides a SQL‑like interface (HiveQL) to query, summarize, and analyze large datasets stored in HDFS and other compatible file systems.</p>
+<p><strong>Key Concepts:</strong></p>
+<ul>
+<li><strong>Schema on read</strong>: Hive applies a schema to data at query time rather than when data is loaded. It handles structured, semi‑structured, and (with SerDes) some unstructured data.</li>
+<li><strong>Hive Metastore</strong>: a central repository that stores metadata about tables, columns, partitions, and their storage locations. It uses an RDBMS (e.g., MySQL, PostgreSQL) for persistence and enables multiple users/tools to share the same table definitions.</li>
+<li><strong>Tables</strong>: managed (Hive owns the data and its lifecycle) or external (Hive references existing data, dropping the table does not delete the files).</li>
+<li><strong>Partitioning and Bucketing</strong>: tables can be partitioned by column values (e.g., <code>date</code>) to restrict scans; buckets further subdivide data for sampling and efficient joins.</li>
+</ul>
+<p><strong>Architecture:</strong></p>
+<ul>
+<li><strong>HiveServer2</strong>: provides Thrift and JDBC/ODBC interfaces for multiple remote clients to submit queries concurrently.</li>
+<li><strong>Driver</strong>: receives queries, manages sessions, and creates execution plans.</li>
+<li><strong>Compiler</strong>: parses HiveQL, accesses the Metastore for type information, and generates a logical plan that is optimized and translated into a directed acyclic graph (DAG) of MapReduce or Tez jobs.</li>
+<li><strong>Execution Engine</strong>: runs the DAG on YARN via MapReduce, Tez, or Spark.</li>
+</ul>
+<p><strong>Use Cases:</strong></p>
+<ul>
+<li>Batch ETL and reporting for data that already resides in HDFS.</li>
+<li>Ad‑hoc analytical queries on large data lakes.</li>
+<li>Data summarization and aggregation where the latency of minutes to hours is acceptable.</li>
+</ul>
+<p><strong>Example:</strong></p>
+<pre><code class="lang-sql"><span class="hljs-keyword">CREATE</span> <span class="hljs-keyword">EXTERNAL</span> <span class="hljs-keyword">TABLE</span> sales (
+  product <span class="hljs-keyword">STRING</span>,
+  amount <span class="hljs-keyword">DOUBLE</span>
+) PARTITIONED <span class="hljs-keyword">BY</span> (<span class="hljs-keyword">year</span> <span class="hljs-built_in">INT</span>, <span class="hljs-keyword">month</span> <span class="hljs-built_in">INT</span>)
+<span class="hljs-keyword">STORED</span> <span class="hljs-keyword">AS</span> PARQUET
+LOCATION <span class="hljs-string">'/data/sales'</span>;
+
+<span class="hljs-keyword">SELECT</span> product, <span class="hljs-keyword">SUM</span>(amount) <span class="hljs-keyword">FROM</span> sales <span class="hljs-keyword">WHERE</span> <span class="hljs-keyword">year</span>=<span class="hljs-number">2025</span> <span class="hljs-keyword">GROUP</span> <span class="hljs-keyword">BY</span> product;
+</code></pre>
+<hr>
+<h3 id="7-apache-pig">7. Apache Pig</h3>
+<p><strong>Purpose:</strong> Pig is a high‑level platform for creating programs that run on Hadoop. It uses a scripting language called <strong>Pig Latin</strong> to express complex data transformations without writing low‑level MapReduce code. Pig Latin abstracts data flow and allows users to focus on business logic.</p>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>Data flow language</strong>: operations like <code>LOAD</code>, <code>FILTER</code>, <code>JOIN</code>, <code>GROUP</code>, <code>FOREACH ... GENERATE</code> form a logical pipeline.</li>
+<li><strong>Ease of use</strong>: Pig Latin is procedural and suitable for ETL tasks, with built‑in functions for common operations. Custom functions (UDFs) can be written in Java, Python, etc.</li>
+<li><strong>Optimization</strong>: Pig’s optimizer applies rules like filter pushdown, projection pruning, and join reordering before generating a physical plan.</li>
+<li><strong>Execution modes</strong>: Pig can run in local mode (for testing) or on a Hadoop cluster. The physical plan is compiled into a sequence of MapReduce, Tez, or Spark jobs.</li>
+<li><strong>Flexible data model</strong>: supports nested data structures (tuples, bags, maps) natively, making it ideal for semi‑structured data.</li>
+</ul>
+<p><strong>Components:</strong></p>
+<ul>
+<li><strong>Grunt</strong>: interactive shell for executing Pig Latin commands.</li>
+<li><strong>Pig Latin Script</strong>: a file containing commands, executed in batch.</li>
+<li><strong>Pig Engine</strong>: parses, optimizes, and submits jobs to the cluster.</li>
+</ul>
+<p><strong>Comparison with Hive:</strong></p>
+<ul>
+<li>Hive is declarative (SQL‑like) and best for analysts comfortable with SQL; Pig is procedural and powerful for complex, multi‑step data transformations.</li>
+<li>Both translate to jobs that run on YARN; today, Spark DataFrames and SQL often replace both.</li>
+</ul>
+<p><strong>Simple Pig Script:</strong></p>
+<pre><code class="lang-pig">sales = LOAD <span class="hljs-string">'/data/sales'</span> <span class="hljs-keyword">USING</span> PigStorage(<span class="hljs-string">','</span>) <span class="hljs-keyword">AS</span> (product:chararray, amount:double);
+filtered = FILTER sales <span class="hljs-keyword">BY</span> amount &gt; <span class="hljs-number">100</span>;
+grouped = <span class="hljs-keyword">GROUP</span> filtered <span class="hljs-keyword">BY</span> product;
+totals = FOREACH grouped GENERATE <span class="hljs-keyword">group</span>, SUM(filtered.amount);
+STORE totals <span class="hljs-keyword">INTO</span> <span class="hljs-string">'/output/sales_total'</span>;
+</code></pre>
+<hr>
+<h3 id="8-apache-sqoop">8. Apache Sqoop</h3>
+<p><strong>Purpose:</strong> Sqoop efficiently transfers bulk data between Hadoop (HDFS, Hive, HBase) and structured data stores such as relational databases (MySQL, Oracle, PostgreSQL, etc.) and enterprise data warehouses.</p>
+<p><strong>How It Works:</strong></p>
+<ul>
+<li><strong>Import</strong>: Sqoop reads metadata from the source database and generates a Java class representing the table schema. It then launches a MapReduce job where each mapper connects to the database using JDBC, reads a subset of rows (based on a split‑by column), and writes them directly to HDFS in delimited text, SequenceFile, Avro, or Parquet format. Data can also be imported directly into Hive tables or HBase.</li>
+<li><strong>Export</strong>: Sqoop reads data from HDFS and inserts or updates records in a target database table. The export also runs as a MapReduce job, with each mapper inserting a batch of rows.</li>
+</ul>
+<p><strong>Key Features:</strong></p>
+<ul>
+<li><strong>Incremental imports</strong>: supports capturing only new or updated rows using timestamps or auto‑increment columns, enabling regular synchronization.</li>
+<li><strong>Direct mode</strong>: uses database‑specific high‑performance tools (e.g., <code>mysqldump</code> for MySQL) instead of JDBC for faster transfers.</li>
+<li><strong>Sqoop 1 vs. Sqoop 2</strong>: Sqoop 2 introduced a client‑server model with a REST API and a web UI for management, but the simpler command‑line Sqoop 1 remains widely used.</li>
+</ul>
+<p><strong>Example Command:</strong></p>
+<pre><code class="lang-bash">sqoop import \
+  -<span class="ruby">-connect <span class="hljs-symbol">jdbc:</span><span class="hljs-symbol">mysql:</span>/<span class="hljs-regexp">/dbhost/salesdb</span> \
+</span>  -<span class="ruby">-username user --password pass \
+</span>  -<span class="ruby">-table transactions \
+</span>  -<span class="ruby">-target-dir /data/transactions \
+</span>  -<span class="ruby">-split-by transaction_id \
+</span>  -<span class="ruby">-incremental append \
+</span>  -<span class="ruby">-check-column last_updated \
+</span>  -<span class="ruby">-last-value <span class="hljs-string">'2025-01-01 00:00:00'</span></span>
+</code></pre>
+<hr>
+<h3 id="9-apache-flume">9. Apache Flume</h3>
+<p><strong>Purpose:</strong> Flume is a distributed, reliable, and available system for efficiently collecting, aggregating, and moving large amounts of streaming event data (such as log files) into HDFS. It is designed to handle high‑throughput, continuous data ingestion.</p>
+<p><strong>Architecture:</strong>
+A Flume agent is a JVM process composed of three pluggable components:</p>
+<ul>
+<li><strong>Source</strong>: receives events from an external source. Sources can poll directories (Spooling Directory Source), listen on network ports (NetCat, Avro, Thrift), or consume from queues (Kafka, JMS).</li>
+<li><strong>Channel</strong>: a temporary buffer that stores events until they are consumed by a sink. Channels can be in‑memory (fast but non‑durable) or file‑based (durable, stores events on disk) to provide different reliability guarantees.</li>
+<li><strong>Sink</strong>: delivers events to a destination, such as HDFS (HDFS Sink), Hive, HBase, or to another Flume agent. Multiple agents can be chained into a multi‑hop topology for complex data pipelines.</li>
+</ul>
+<p><strong>Key Concepts:</strong></p>
+<ul>
+<li><strong>Reliability</strong>: events are only removed from a channel after they are successfully written by the sink. If an agent fails, events remain in durable channels and can be processed after restart.</li>
+<li><strong>Configuration</strong>: agents are defined via a properties file, specifying sources, channels, and sinks, and connecting them.</li>
+<li><strong>Interceptors</strong>: allow lightweight transformation or filtering of events within the agent (e.g., adding timestamps, filtering).</li>
+</ul>
+<p><strong>Use Case:</strong></p>
+<ul>
+<li>Centralized collection of web server logs: each web server runs a Flume agent that tails local log files and sends events to a collector agent, which writes them to HDFS for later analysis.</li>
+</ul>
+<hr>
+<h3 id="10-apache-oozie">10. Apache Oozie</h3>
+<p><strong>Purpose:</strong> Oozie is a scalable, extensible workflow scheduler and coordinator system to manage Hadoop jobs. It allows users to define complex multi‑step data processing pipelines that may include MapReduce, Pig, Hive, Sqoop, Spark, and shell actions.</p>
+<p><strong>Workflow Definitions:</strong></p>
+<ul>
+<li>Workflows are directed acyclic graphs (DAGs) defined in XML using a domain‑specific language.</li>
+<li><strong>Action Nodes</strong>: represent individual tasks (e.g., <code>&lt;map-reduce&gt;</code>, <code>&lt;hive&gt;</code>, <code>&lt;pig&gt;</code>, <code>&lt;sqoop&gt;</code>, <code>&lt;shell&gt;</code>, <code>&lt;spark&gt;</code>).</li>
+<li><strong>Control Nodes</strong>: define the flow (<code>&lt;start&gt;</code>, <code>&lt;end&gt;</code>, <code>&lt;kill&gt;</code>, <code>&lt;decision&gt;</code>, <code>&lt;fork&gt;</code>, <code>&lt;join&gt;</code>). A fork can launch multiple parallel actions; a join synchronizes them.</li>
+<li>Parameters and variables can be templated using JSP Expression Language.</li>
+</ul>
+<p><strong>Coordinator:</strong></p>
+<ul>
+<li>Builds on workflows and allows scheduling based on time (frequency) and data availability. A coordinator XML defines when and under what conditions a workflow should be launched (e.g., when a certain HDFS directory exists).</li>
+</ul>
+<p><strong>Oozie Server:</strong></p>
+<ul>
+<li>Runs as a web application in a servlet container (Tomcat). It maintains workflow state in a relational database (MySQL, Postgres).</li>
+<li>Clients submit workflows via CLI, REST API, or a web console.</li>
+</ul>
+<p><strong>Example Workflow Snippet:</strong></p>
+<pre><code class="lang-xml"><span class="xml"><span class="hljs-tag">&lt;<span class="hljs-name">workflow-app</span> <span class="hljs-attr">name</span>=<span class="hljs-string">"example"</span> <span class="hljs-attr">xmlns</span>=<span class="hljs-string">"uri:oozie:workflow:0.5"</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">start</span> <span class="hljs-attr">to</span>=<span class="hljs-string">"hive-query"</span>/&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">action</span> <span class="hljs-attr">name</span>=<span class="hljs-string">"hive-query"</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">hive</span> <span class="hljs-attr">xmlns</span>=<span class="hljs-string">"uri:oozie:hive-action:0.5"</span>&gt;</span>
+      <span class="hljs-tag">&lt;<span class="hljs-name">job-tracker</span>&gt;</span>$</span><span class="hljs-template-variable">{jobTracker}</span><span class="xml"><span class="hljs-tag">&lt;/<span class="hljs-name">job-tracker</span>&gt;</span>
+      <span class="hljs-tag">&lt;<span class="hljs-name">name-node</span>&gt;</span>$</span><span class="hljs-template-variable">{nameNode}</span><span class="xml"><span class="hljs-tag">&lt;/<span class="hljs-name">name-node</span>&gt;</span>
+      <span class="hljs-tag">&lt;<span class="hljs-name">script</span>&gt;</span><span class="undefined">script.hql</span><span class="hljs-tag">&lt;/<span class="hljs-name">script</span>&gt;</span>
+    <span class="hljs-tag">&lt;/<span class="hljs-name">hive</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">ok</span> <span class="hljs-attr">to</span>=<span class="hljs-string">"end"</span>/&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">error</span> <span class="hljs-attr">to</span>=<span class="hljs-string">"fail"</span>/&gt;</span>
+  <span class="hljs-tag">&lt;/<span class="hljs-name">action</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">kill</span> <span class="hljs-attr">name</span>=<span class="hljs-string">"fail"</span>&gt;</span>
+    <span class="hljs-tag">&lt;<span class="hljs-name">message</span>&gt;</span>Hive failed<span class="hljs-tag">&lt;/<span class="hljs-name">message</span>&gt;</span>
+  <span class="hljs-tag">&lt;/<span class="hljs-name">kill</span>&gt;</span>
+  <span class="hljs-tag">&lt;<span class="hljs-name">end</span> <span class="hljs-attr">name</span>=<span class="hljs-string">"end"</span>/&gt;</span>
+<span class="hljs-tag">&lt;/<span class="hljs-name">workflow-app</span>&gt;</span></span>
+</code></pre>
+<hr>
+<h3 id="11-apache-zookeeper">11. Apache ZooKeeper</h3>
+<p><strong>Purpose:</strong> ZooKeeper is a centralized coordination service for distributed applications. It provides primitives such as distributed configuration storage, naming, synchronization, and group services, which are used by many Hadoop ecosystem components to achieve high availability and consistency.</p>
+<p><strong>Data Model:</strong></p>
+<ul>
+<li>ZooKeeper stores data in a hierarchical namespace similar to a file system. Each node, called a <strong>znode</strong>, can hold data and have children. Znodes can be persistent or ephemeral (deleted when the creating session ends).</li>
+<li>Clients can set <strong>watches</strong> on znodes to be notified of changes without polling.</li>
+</ul>
+<p><strong>Coordination Primitives:</strong></p>
+<ul>
+<li><strong>Leader election</strong>: components can create an ephemeral sequential znode; the one with the lowest sequence number becomes the leader. Others watch it and take over if it disappears. Used by HDFS HA for NameNode failover and by YARN ResourceManager HA.</li>
+<li><strong>Distributed locks</strong>: through ephemeral znodes.</li>
+<li><strong>Configuration management</strong>: shared configuration is stored in znodes; all nodes in the system watch and reload when changed.</li>
+<li><strong>Service discovery</strong>: ephemeral znodes indicate live servers; clients can list children of a znode to discover available instances.</li>
+</ul>
+<p><strong>Integration in Hadoop Ecosystem:</strong></p>
+<ul>
+<li><strong>HBase</strong>: uses ZooKeeper for master election, region server liveness, and cluster metadata.</li>
+<li><strong>Kafka</strong>: relies on ZooKeeper (in older versions) for broker metadata and topic configuration.</li>
+<li><strong>HDFS HA</strong>: JournalNodes and active‑standby failover management.</li>
+<li><strong>YARN HA</strong>: ResourceManager failover coordination.</li>
+</ul>
+<p><strong>Cluster Setup:</strong>
+ZooKeeper itself runs as an ensemble of an odd number of servers (typically 3 or 5) for quorum‑based fault tolerance. A leader handles writes, and followers serve reads; the protocol ensures strong consistency.</p>
+<hr>
+<h3 id="12-hadoop-use-cases">12. Hadoop Use Cases</h3>
+<p>The Hadoop ecosystem enables a wide range of data‑intensive applications:</p>
+<ul>
+<li><strong>Batch ETL and Data Warehousing</strong>: Using Sqoop to ingest relational data into HDFS, then transforming and aggregating with Hive or Spark, and loading into analytical data marts.</li>
+<li><strong>Log Processing and Clickstream Analytics</strong>: Flume streams web server logs into HDFS; Hive or Pig processes them to compute user behavior metrics, sessionization, and funnel analysis.</li>
+<li><strong>Recommendation Engines</strong>: MapReduce or Spark MLlib process massive click and purchase histories to build collaborative filtering models, later deployed for real‑time recommendations.</li>
+<li><strong>Fraud Detection</strong>: Batch analysis of billions of transactions to train anomaly detection models; patterns updated periodically and used for scoring new transactions.</li>
+<li><strong>Sentiment Analysis and Text Mining</strong>: Unstructured social media feeds and customer reviews stored in HDFS, analyzed with NLP libraries running on Spark or Pig.</li>
+<li><strong>Data Archiving and Compliance</strong>: Hadoop provides low‑cost, scalable storage with HDFS erasure coding for long‑term retention of data that still needs to be queryable.</li>
+<li><strong>Machine Learning Model Training</strong>: Distributed training on large datasets using MLlib or external frameworks (TensorFlow on Spark), leveraging the cluster’s compute capacity.</li>
+<li><strong>IoT and Sensor Data</strong>: Aggregating high‑velocity sensor data into HDFS for batch modeling and trend analysis, often in combination with stream processing.</li>
+</ul>
+<hr>
+<h3 id="13-hadoop-administration-basics">13. Hadoop Administration Basics</h3>
+<p>Operating a Hadoop cluster involves hardware provisioning, configuration, monitoring, and maintenance.</p>
+<p><strong>Cluster Setup:</strong></p>
+<ul>
+<li><strong>Hardware</strong>: commodity servers with adequate disks (JBOD), RAM, and network. Master nodes should be more reliable with RAID for metadata disks.</li>
+<li><strong>Operating System</strong>: Linux (RHEL/CentOS/Ubuntu) with Java installed, SSH configured for password‑less inter‑node communication, and NTP for time synchronization.</li>
+<li><strong>Configuration Files</strong> (located in <code>$HADOOP_HOME/etc/hadoop</code>):<ul>
+<li><code>core-site.xml</code>: general settings, default file system URI (<code>hdfs://...</code>).</li>
+<li><code>hdfs-site.xml</code>: replication factor, block size, NameNode and DataNode directories, HA settings.</li>
+<li><code>yarn-site.xml</code>: ResourceManager address, NodeManager resources (memory, CPU), auxiliary services.</li>
+<li><code>mapred-site.xml</code>: framework name (yarn), memory limits.</li>
+<li><code>workers</code> file (formerly <code>slaves</code>): lists all DataNode/NodeManager hostnames.</li>
+</ul>
+</li>
+</ul>
+<p><strong>Starting and Stopping Services:</strong></p>
+<ul>
+<li>Daemons are started via scripts: <code>start-dfs.sh</code>, <code>stop-dfs.sh</code>, <code>start-yarn.sh</code>, <code>stop-yarn.sh</code>. Individual daemons can be controlled with <code>hadoop-daemon.sh</code> or <code>yarn-daemon.sh</code>.</li>
+<li>In an HA setup, ZooKeeper failover controllers are started separately.</li>
+</ul>
+<p><strong>Node Management:</strong></p>
+<ul>
+<li><strong>Adding a node</strong>: install the same Hadoop version, copy configs, add the hostname to the <code>workers</code> file, and start DataNode/NodeManager. The cluster automatically rebalances blocks if needed.</li>
+<li><strong>Decommissioning a node</strong>: add the hostname to an excludes file (pointed by <code>dfs.hosts.exclude</code>), refresh the NameNode. The node will transition to decommissioning, replicating its blocks elsewhere before shutting down.</li>
+</ul>
+<p><strong>Monitoring and Health:</strong></p>
+<ul>
+<li>Web UIs: NameNode UI (port 50070/9870) shows DFS health, block reports, under‑replicated blocks; ResourceManager UI (8088) shows cluster capacity, running applications, and job history.</li>
+<li>Metrics: Hadoop exposes JMX metrics; administrators often integrate with tools like Ganglia, Ambari Metrics, or Cloudera Manager.</li>
+<li><strong>fsck</strong> command: checks HDFS for missing/corrupt blocks and reports on overall health.</li>
+<li><strong>Balancer</strong>: redistributes blocks to maintain even disk usage across DataNodes.</li>
+</ul>
+<p><strong>High Availability:</strong></p>
+<ul>
+<li>NameNode HA: configure a pair of NameNodes with a set of JournalNodes (typically 3) to share edit logs. Active‑standby failover is managed by ZooKeeper.</li>
+<li>ResourceManager HA: similar active‑standby configuration with state stored in a persistent store (ZooKeeper or HDFS).</li>
+</ul>
+<p><strong>Security:</strong></p>
+<ul>
+<li><strong>Kerberos</strong>: enable Hadoop to authenticate users and services via Kerberos tickets, preventing unauthorized access.</li>
+<li><strong>Authorization</strong>: HDFS file permissions (POSIX‑style), HDFS ACLs, and YARN access control lists.</li>
+<li><strong>Data at rest encryption</strong>: HDFS transparent encryption using key management servers (KMS).</li>
+<li><strong>Perimeter security</strong>: Apache Knox gateway for REST API access.</li>
+</ul>
+<p><strong>Backup and Recovery:</strong></p>
+<ul>
+<li>NameNode metadata backups: regularly copy the fsimage and edit log files to a remote location; secondary/standby NameNode performs checkpointing.</li>
+<li>Trash: HDFS can be configured with a trash directory, allowing recovery of accidentally deleted files within a configurable retention period.</li>
+<li>Snapshots: HDFS snapshots enable point‑in‑time copies of directories for quick rollback.</li>
+</ul>
+<p><strong>Tuning:</strong></p>
+<ul>
+<li>Adjust heap sizes for NameNode, ResourceManager, and other Java daemons.</li>
+<li>Configure YARN container memory and CPU scheduling.</li>
+<li>Optimize block size, replication factor, and short‑circuit local reads for performance.</li>
+</ul>
+<hr>
+<p>The Hadoop ecosystem, with its robust core and versatile tools, remains a cornerstone of big data infrastructure. Understanding its components—from HDFS and YARN to Hive, Sqoop, and ZooKeeper—provides a comprehensive foundation for designing, deploying, and managing large‑scale data processing solutions.</p>
+
+<hr>
+
+<h2 id="hdfs-architecture">HDFS Architecture</h2>
 <ul>
 <li>HDFS design principles</li>
 <li>NameNode architecture</li>
