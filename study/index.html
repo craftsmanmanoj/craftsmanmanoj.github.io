@@ -1,13 +1,95 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <title>Merge HTML Files</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Documentation</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        body {
+            font-family: Arial, sans-serif
+        }
+
+        .header {
+            height: 60px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            font-weight: bold
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 240px 1fr 280px
+        }
+
+        #leftNav,
+        #rightNav {
+            height: calc(100vh - 60px);
+            overflow: auto;
+            position: sticky;
+            top: 60px;
+            padding: 20px
+        }
+
+        #leftNav {
+            border-right: 1px solid #ddd
+        }
+
+        #rightNav {
+            border-left: 1px solid #ddd
+        }
+
+        .content {
+            padding: 40px;
+            max-width: 1000px
+        }
+
+        h1,
+        h2,
+        h3,
+        h4 {
+            margin-top: 24px;
+            margin-bottom: 10px
+        }
+
+        ul {
+            list-style: none
+        }
+
+        a {
+            text-decoration: none;
+            color: #222;
+            display: block;
+            padding: 4px
+        }
+
+        .h3 {
+            margin-left: 15px
+        }
+
+        .h4 {
+            margin-left: 30px
+        }
+    </style>
 </head>
+
 <body>
 
-    <!-- Target container for the merged HTML -->
-    <div id="merged-content"></div>
+    <div class="layout">
+        <aside id="leftNav"></aside>
+        <main id="content" class="content">
+            <div id="merged-content"></div>
+        </main>
+        <aside id="rightNav"></aside>
+    </div>
 
     <script>
         // Array of file paths you want to merge
@@ -19,24 +101,99 @@
             for (const filePath of files) {
                 try {
                     const response = await fetch(filePath);
-                    
+
                     if (!response.ok) {
                         throw new Error(`Could not load ${filePath}`);
                     }
 
                     const htmlText = await response.text();
-                    
+
                     // Merge dynamically into the DOM
                     container.insertAdjacentHTML('beforeend', htmlText);
-                    
+
                 } catch (error) {
                     console.error('Error:', error);
                 }
             }
         }
 
+
+        document.addEventListener("DOMContentLoaded", () => {
+            createIds();
+            generateLeftNav();
+        });
+
+        function createIds() {
+            document.querySelectorAll("#content h1,#content h2,#content h3,#content h4")
+                .forEach(h => {
+                    h.id = h.textContent.toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, "-");
+                });
+        }
+
+        function generateLeftNav() {
+            const nav = document.getElementById("leftNav");
+            const h1s = document.querySelectorAll("#content h1");
+
+            let html = "<h3>Topics</h3><ul>";
+            h1s.forEach(h1 => {
+                html += `<li><a href="#" data-id="${h1.id}">${h1.textContent}</a></li>`;
+            });
+            html += "</ul>";
+            nav.innerHTML = html;
+
+            nav.querySelectorAll("a").forEach(a => {
+                a.addEventListener("click", (e) => {
+                    e.preventDefault();
+                    const h1 = document.getElementById(a.dataset.id);
+                    h1.scrollIntoView({ behavior: "smooth" });
+                    generateRightNav(h1);
+                });
+            });
+
+            if (h1s.length) generateRightNav(h1s[0]);
+        }
+
+        function generateRightNav(selectedH1) {
+
+            const right = document.getElementById("rightNav");
+            let html = "<h3>Contents</h3><ul>";
+
+            let node = selectedH1.nextElementSibling;
+
+            while (node && node.tagName !== "H1") {
+                if (node.matches("h2,h3,h4")) {
+                    html += `
+       <li class="${node.tagName.toLowerCase()}">
+         <a href="#${node.id}">${node.textContent}</a>
+       </li>`;
+                }
+                node = node.nextElementSibling;
+            }
+
+            html += "</ul>";
+            right.innerHTML = html;
+        }
+
+        window.addEventListener("scroll", () => {
+
+            let active = null;
+
+            document.querySelectorAll("#content h1")
+                .forEach(h1 => {
+                    if (h1.getBoundingClientRect().top < 120) {
+                        active = h1;
+                    }
+                });
+
+            if (active && window.lastH1 !== active.id) {
+                window.lastH1 = active.id;
+                generateRightNav(active);
+            }
+        });
+
         // Execute the function
         loadAndMergeHTML(filesToMerge);
     </script>
 </body>
+
 </html>
