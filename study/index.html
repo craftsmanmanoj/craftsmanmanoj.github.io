@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Merge HTML Files</title>
+</head>
+<body>
+
+    <!-- Target container for the merged HTML -->
+    <div id="merged-content"></div>
+
+    <script>
+        // Array of file paths you want to merge
+        const filesToMerge = ['header.html', 'content.html', 'footer.html'];
+
+        async function loadAndMergeHTML(files) {
+            const container = document.getElementById('merged-content');
+
+            for (const filePath of files) {
+                try {
+                    const response = await fetch(filePath);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Could not load ${filePath}`);
+                    }
+
+                    const htmlText = await response.text();
+                    
+                    // Merge dynamically into the DOM
+                    container.insertAdjacentHTML('beforeend', htmlText);
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                }
+            }
+        }
+
+        // Execute the function
+        loadAndMergeHTML(filesToMerge);
+    </script>
+</body>
+</html>
